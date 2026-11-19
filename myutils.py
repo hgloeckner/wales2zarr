@@ -81,10 +81,10 @@ def bitround(ds, keepbits=16, codec=None):
     )
 
 
-def get_full_ds_for_var(name, ds_var_name):
+def get_full_ds_for_var(path, name, ds_var_name):
 
-    var_paths = glob.glob(f"{path}*/PERCUSION_HALO_WALES_{name}_*.nc")
-    alt_grid = np.arange(0, 17000, 15)
+    var_paths = glob.glob(f"{path}/PERCUSION_*HALO*_WALES_{name}_*.nc")
+    alt_grid = np.arange(0, 17000, 15, dtype=np.float32)
     datasets = []
     for var_path in var_paths:
         ds = (
