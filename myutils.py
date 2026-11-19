@@ -3,11 +3,11 @@ import xarray as xr
 import glob
 import dask
 import numcodecs
+from zarr.codecs import BloscCodec
 
-path = "/work/mh0010/ORCESTRA_TRANSFER/lutz/WALES/percusion/"
 
-
-def get_chunks(dimensions, chunksize=393216):
+def get_chunks(sizes, chunksize=393216):
+    dimensions = sizes.keys()
     if ("altitude" in dimensions) and ("time" in dimensions):
         chunks = {
             "time": 2000,
@@ -15,24 +15,24 @@ def get_chunks(dimensions, chunksize=393216):
         }
     elif "time" in dimensions:
         chunks = {
-            "time": -1,
+            "time": sizes["time"],
         }
     else:
         chunks = {
-            "altitude": -1,
+            "altitude": sizes["altitude"],
         }
 
     return tuple((chunks[d] for d in dimensions))
 
 
 def get_encoding(dataset):
-    compressor = numcodecs.Blosc("zstd", shuffle=2, clevel=6)
 
+    compressor = BloscCodec(cname="zstd", clevel=5, shuffle="bitshuffle")
     return {
         var: {
-            "compressor": compressor,
-            "dtype": "float32",
-            "chunks": get_chunks(dataset[var].dims),
+            "compressors": (compressor,),
+            "dtype": dataset[var].dtype,
+            "chunks": get_chunks(dataset[var].sizes),
         }
         for var in dataset.variables
         if var not in dataset.dims
@@ -61,13 +61,24 @@ def bitround(ds, keepbits=16, codec=None):
 
     ds_rounded = xr.apply_ufunc(
         _bitround,
-        ds,
+        ds[[var for var in ds.data_vars if np.issubdtype(ds[var].dtype, np.float32)]],
         kwargs={"keepbits": keepbits},
         keep_attrs=True,
         dask="parallelized",
     )
 
-    return ds_rounded
+    return xr.merge(
+        [
+            ds_rounded,
+            ds[
+                [
+                    var
+                    for var in ds.data_vars
+                    if not np.issubdtype(ds[var].dtype, np.float32)
+                ]
+            ],
+        ]
+    )
 
 
 def get_full_ds_for_var(name, ds_var_name):
@@ -77,7 +88,8 @@ def get_full_ds_for_var(name, ds_var_name):
     datasets = []
     for var_path in var_paths:
         ds = (
-            xr.open_dataset(var_path, chunks={"time": 2000})
+            xr.open_dataset(var_path)
+            .chunk(time=2000)
             .sortby("altitude")
             .sel(altitude=slice(0, None))
         )
