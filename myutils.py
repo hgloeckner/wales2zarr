@@ -115,9 +115,23 @@ def get_full_ds_for_var(path, name, ds_var_name):
             if key in datasets[0].variables
         }
     )
-    return (
+    ds = (
         xr.concat(datasets, dim="time")
         .rename(rename_dict)
         .sortby(["time", "altitude"])
         .chunk(time=2000, altitude=-1)
     )
+    assert np.all(
+        ds.vertical_resolution.max("time") == ds.vertical_resolution.min("time")
+    )
+    return ds.assign(
+        {
+            f"{name}_vertical_resolution": (
+                "altitude",
+                ds.vertical_resolution.mean("time").values,
+                ds.vertical_resolution.attrs,
+            ),
+            f"{name}_horizontal_resolution": ds.horizontal_resolution,
+            f"{name}_flags": ds[f"{name}_flags"].astype(np.uint16),
+        }
+    ).drop_vars(["vertical_resolution", "horizontal_resolution"])
